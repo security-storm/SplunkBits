@@ -1,0 +1,110 @@
+<form>
+  <label>ThreatIntel-ESS-WhiteList-Template</label>
+  <description>Template to be used for cloning new whitelist dashboards</description>
+  <fieldset submitButton="true" autoRun="true">
+    <input type="dropdown" token="input_timeframe">
+      <label>Timeframe</label>
+      <choice value="+2w">2 Weeks</choice>
+      <choice value="+1mon">1 Month</choice>
+      <choice value="+3mon">3 Months</choice>
+      <choice value="+1y">1 Year</choice>
+      <prefix>"</prefix>
+      <suffix>"</suffix>
+      <default>+2w</default>
+    </input>
+    <input type="text" token="input_text1">
+      <label>Text Field 1</label>
+      <default>*</default>
+    </input>
+    <input type="text" token="input_text2">
+      <label>Text Field 2</label>
+      <default>*</default>
+    </input>
+    <input type="dropdown" token="input_dropdown1" id="input_dropdown1">
+      <label>Dropdown populated by search:</label>
+      <search>
+        <query>| inputlookup web_category_threshold_and_severity_override.csv | eval description=description + " (" + category + ")" | fields description , category</query>
+      </search>
+      <fieldForLabel>description</fieldForLabel>
+      <fieldForValue>category</fieldForValue>
+      <choice value="*">All (*)</choice>
+    </input>
+    <input type="dropdown" token="input_reason">
+      <label>Reason</label>
+      <choice value="Authorized">Authorized</choice>
+      <choice value="False Positive">False Positive</choice>
+      <choice value="Incident">Incident</choice>
+    </input>
+    <input type="text" token="input_description">
+      <label>Description</label>
+      <default>*</default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <table>
+        <title>Today's Entries</title>
+        <search>
+          <query>| inputlookup ess_whitelist_template.csv
+| eval current_date=strftime(now(),"%Y-%m-%d")
+| where expire_date >= current_date
+| fields - current_date  
+
+| append
+[
+    stats count 
+    | eval field1 = COALESCE(if(trim("$input_text1$")="", "*", trim("$input_text1$")), "*")
+    | eval field2 = COALESCE(if(trim("$input_text2$")="", "*", trim("$input_text2$")), "*")
+    | eval field3 = COALESCE(if(trim("$input_dropdown1$")="", "*", trim("$input_dropdown1$")), "*")
+    | eval reason = trim("$input_reason$")     
+    | eval description = COALESCE("$input_description$", "") 
+
+    | eval added_datetime = now()
+    | eval added_date = strftime(now(), "%Y-%m-%d")     
+    | eval expire_date = strftime(relative_time(now(), $input_timeframe$), "%Y-%m-%d")        
+    | table *
+    | join type=outer
+    [ 
+        rest /services/authentication/current-context/context          
+        | fields + username          
+        | rename username as contact
+    ]     
+    | fields - _raw _time count
+    | where NOT (field1="*" AND field2="*" AND field3="*")
+]
+
+| sort -added_datetime
+| dedup field1, field2, field3 
+| sort -added_date
+| outputlookup ess_whitelist_template.csv
+| fields added_date expire_date contact field1 field2 field3 reason description
+          
+          </query>
+          <earliest>0</earliest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="drilldown">cell</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Current Entries</title>
+        <search>
+          <query>| inputlookup ess_whitelist_template.csv | sort -added_datetime | fields added_date expire_date contact field1 field2 field3 reason description
+</query>
+          <earliest>0</earliest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="drilldown">cell</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">100</option>
+      </table>
+    </panel>
+  </row>
+</form>
