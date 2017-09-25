@@ -1,0 +1,109 @@
+<form>
+  <label>ThreatIntel-ESS-Override-Template</label>
+  <description>Template to be used for cloning new override dashboards</description>
+  <fieldset submitButton="true" autoRun="true">
+    <input type="dropdown" token="input_severity">
+      <label>Severity</label>
+      <choice value="Informational">Informational</choice>
+      <choice value="Low">Low</choice>
+      <choice value="Medium">Medium</choice>
+      <choice value="High">High</choice>
+      <choice value="Critical">Critical</choice>
+      <default>Informational</default>
+    </input>
+    <input type="dropdown" token="input_alert">
+      <label>Alert</label>
+      <choice value="ON-CALL-EMAIL-ALERT">Email Only</choice>
+      <choice value="ON-CALL-SMS-ALERT">Email + SMS</choice>
+      <default>Email + SMS</default>
+    </input>
+    <input type="text" token="input_text1">
+      <label>Text Field 1</label>
+      <default>*</default>
+    </input>
+    <input type="text" token="input_text2">
+      <label>Text Field 2</label>
+      <default>*</default>
+    </input>
+    <input type="dropdown" token="input_dropdown1" id="input_dropdown1">
+      <label>Dropdown populated by search:</label>
+      <search>
+        <query>| inputlookup web_category_threshold_and_severity_override.csv | eval description=description + " (" + category + ")" | fields description , category</query>
+      </search>
+      <fieldForLabel>description</fieldForLabel>
+      <fieldForValue>category</fieldForValue>
+      <choice value="*">All (*)</choice>
+    </input>
+    <input type="text" token="input_description">
+      <label>Description</label>
+      <default>*</default>
+    </input>
+  </fieldset>
+  <row>
+    <panel>
+      <table>
+        <title>Latest Entries</title>
+        <search>
+          <query>| inputlookup ess_override_xxx.csv
+
+| append
+[
+    stats count 
+    | eval field1 = COALESCE(if(trim("$input_text1$")="", "*", trim("$input_text1$")), "*")
+    | eval field2 = COALESCE(if(trim("$input_text2$")="", "*", trim("$input_text2$")), "*")
+    | eval field3 = COALESCE(if(trim("$input_dropdown1$")="", "*", trim("$input_dropdown1$")), "*")
+    | eval description = COALESCE("$input_description$", "") 
+    | eval severity = trim("$input_severity$")
+    | eval alert_action = trim("$input_alert$")
+    | eval added_datetime = now()    
+    | eval added_date = strftime(now(), "%Y-%m-%d")
+    
+    | table *
+    | join type=outer
+    [ 
+        rest /services/authentication/current-context/context
+        | fields + username          
+        | rename username as contact
+    ]     
+    | fields - _raw _time count
+    | where NOT (field1="*" AND field2="*" AND field3="*")
+]
+
+| sort -added_datetime
+| dedup field1, field2, field3 
+| stats first(added_datetime) as added_datetime, first(added_date) as added_date, first(alert_action) as alert_action, first(severity) as severity, first(contact) as contact, first(description) as description by field1,field2,field3
+
+| outputlookup  ess_override_xxx.csv
+| fields added_date contact severity alert_action field1 field2 field3 description
+</query>
+          <earliest>0</earliest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="drilldown">cell</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">20</option>
+      </table>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <table>
+        <title>Existing Entries (not updated with ones added this session)</title>
+        <search>
+          <query>
+| inputlookup  ess_override_xxx.csv 
+| sort -added_datetime
+| fields added_date contact severity alert_action field1 field2 field3 description
+		  </query>
+          <earliest>0</earliest>
+        </search>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="drilldown">cell</option>
+        <option name="dataOverlayMode">none</option>
+        <option name="count">100</option>
+      </table>
+    </panel>
+  </row>
+</form>
